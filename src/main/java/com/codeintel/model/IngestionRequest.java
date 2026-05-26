@@ -2,7 +2,7 @@ package main.java.com.codeintel.model;
 
 public class IngestionRequest {
     private String repoUrl;
-    private String branch; // optional, defaults to "main"
+    private String branch; // optional but defaults to "main"
 
     public IngestionRequest() {}
 

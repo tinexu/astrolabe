@@ -6,3 +6,4 @@ import java.util.UUID;
 
 public interface RepoMetadataRepository extends CassandraRepository<RepoMetadata, UUID> {
 }
+

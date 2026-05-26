@@ -22,13 +22,21 @@ public class RepoIngestionService {
 
     private final RepoMetadataRepository repoMetadataRepository;
 
+    private final JobPublisher jobPublisher;
+
+    public RepoIngestionService(RepoMetadataRepository repoMetadataRepository,
+                             JobPublisher jobPublisher) {
+        this.repoMetadataRepository = repoMetadataRepository;
+        this.jobPublisher = jobPublisher;
+    }
+
     // directories and files to skip during tree walk
     private static final Set<String> IGNORED_DIRS = Set.of(
         ".git", "node_modules", ".idea", ".vscode", "target",
         "build", "dist", "__pycache__", ".gradle", "vendor"
     );
 
-    // extensions we consider "source code"
+    // extensions considered "source code"
     private static final Map<String, String> EXTENSION_TO_LANGUAGE = Map.ofEntries(
         Map.entry(".java", "java"),
         Map.entry(".py", "python"),
@@ -62,11 +70,11 @@ public class RepoIngestionService {
     }
 
     public RepoMetadata ingest(String repoUrl, String branch) throws Exception {
-        // 1. extract repo name from URL
+        // Extract repo name from URL
         String repoName = extractRepoName(repoUrl);
         String effectiveBranch = (branch != null && !branch.isBlank()) ? branch : "main";
 
-        // 2. create metadata record with IN_PROGRESS status
+        // Create metadata record with IN_PROGRESS status
         RepoMetadata metadata = new RepoMetadata();
         metadata.setRepoUrl(repoUrl);
         metadata.setRepoName(repoName);
@@ -75,7 +83,7 @@ public class RepoIngestionService {
 
         Path tempDir = null;
         try {
-            // 3. clone repo to temp directory
+            // Clone repo to temp directory
             tempDir = Files.createTempDirectory("codeintel-" + repoName);
             log.info("Cloning {} (branch: {}) into {}", repoUrl, effectiveBranch, tempDir);
 
@@ -83,14 +91,14 @@ public class RepoIngestionService {
                 .setURI(repoUrl)
                 .setDirectory(tempDir.toFile())
                 .setBranch(effectiveBranch)
-                .setDepth(1)  // shallow clone — we only need current file state
+                .setDepth(1)  // shallow clone bc only need current file state
                 .call()
                 .close();
 
-            // 4. walk file tree and build job list
+            // Walk file tree and build job list
             List<FileJob> jobs = walkAndCollectJobs(tempDir, metadata.getRepoId(), repoName);
 
-            // 5. update metadata with final count
+            // Update metadata with final count
             metadata.setTotalFiles(jobs.size());
             metadata.setStatus("COMPLETED");
             metadata.setLastUpdated(Instant.now());
@@ -98,9 +106,8 @@ public class RepoIngestionService {
 
             log.info("Ingestion complete: {} files from {}", jobs.size(), repoName);
 
-            // In step 2, this is where we'd publish jobs to RabbitMQ.
-            // For now, jobs are built but not dispatched.
-            // publishToQueue(jobs);  <-- wired in step 2
+            int published = jobPublisher.publishJobs(jobs);
+            log.info("Dispatched {} jobs to RabbitMQ for {}", published, repoName);
 
             return metadata;
 
@@ -111,7 +118,7 @@ public class RepoIngestionService {
             log.error("Ingestion failed for {}: {}", repoUrl, e.getMessage());
             throw e;
         } finally {
-            // 6. clean up cloned repo
+            // Clean up cloned repo
             if (tempDir != null) {
                 deleteDirectory(tempDir);
             }
@@ -156,7 +163,7 @@ public class RepoIngestionService {
     }
 
     private String extractRepoName(String url) {
-        // "https://github.com/user/repo-name.git" -> "user/repo-name"
+        // "https://github.com/user/repo-name.git" is translated to "user/repo-name"
         String cleaned = url.replaceAll("\\.git$", "");
         String[] parts = cleaned.split("/");
         if (parts.length >= 2) {

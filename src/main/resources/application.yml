@@ -5,3 +5,15 @@ spring:
     port: 9042
     local-datacenter: datacenter1
     schema-action: create_if_not_exists
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: manual    # handle ack/nack on own
+        prefetch: 10                # each worker pulls 10 jobs at a time
+        concurrency: 3              # 3 concurrent consumers per instance
+        max-concurrency: 10         # scales up to 10 under load
